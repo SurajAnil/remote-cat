@@ -12,12 +12,12 @@ TFTP is a simple file transfer protocol that uses UDP as its underlying protocol
 
 ## Architecture
 
-    rcat Client --------------->  TFTP Server (file.txt)
-                  RRQ                                           
+    remcat Client --------------->  TFTP Server (file.txt)
+                    RRQ                                           
 
 
-    rcat Client <---------------  TFTP Server (file.txt)
-     [STDOUT]     DAT (TFTP)                                
+    remcat Client <---------------  TFTP Server (file.txt)
+     [STDOUT]         DAT (TFTP)                                
                        
 
     
