@@ -37,7 +37,7 @@
 
 /* A connection handle */
 struct tftp_conn {
-  int type;    /* Are we putting or getting? */
+  int type;    /* Are we putting or getting? - In our case, we only get */
   FILE* fp;    /* The file we are reading or writing */
   int sock;    /* Socket to communicate with server */
   int blocknr; /* The current block number */
@@ -57,7 +57,8 @@ struct tftp_conn* tftp_connect(int type,
   struct addrinfo hints;
   struct tftp_conn* tc = NULL;
 
-  if (!fname || !mode)
+  /* error checks */
+  if (!fname || !mode || !hostname)
     return NULL;
 
   tc = (struct tftp_conn*)malloc(sizeof(struct tftp_conn));
@@ -136,7 +137,7 @@ int tftp_send_rrq(struct tftp_conn* tc) {
   *(short*)buffer = htons(OPCODE_RRQ); /* The op-code   */
   p = buffer + 2;                      /* Point to the next location */
   strcpy(p, tc->fname);                /* The file name */
-  p += strlen(tc->fname) + 1;          /* Keep the nul  */
+  p += strlen(tc->fname) + 1;          /* Keep the null  */
   strcpy(p, MODE_OCTET);               /* The Mode      */
   p += strlen(MODE_OCTET) + 1;
 
@@ -154,14 +155,10 @@ int tftp_transfer(struct tftp_conn* tc) {
   char buffer[MSGBUF_SIZE], *p;
   int fdstdout;
   int count, server_len;
-  p = buffer + 2; /* Point to the next location */
-  // strcpy(p, tc->fname);                /* The file name */
-  p += strlen(tc->fname) + 1; /* Keep the nul  */
-  // strcpy(p, MODE_OCTET);               /* The Mode      */
+  p = buffer + 2;             /* Point to the next location */
+  p += strlen(tc->fname) + 1; /* Keep the null terminator */
   p += strlen(MODE_OCTET) + 1;
   int retval = 0;
-  // int totlen = 0;
-  // struct timeval timeout;
 
   /* Sanity check */
   if (!tc)
@@ -178,8 +175,8 @@ int tftp_transfer(struct tftp_conn* tc) {
                     struct sockaddr *src_addr, socklen_t *addrlen);*/
     server_len = sizeof(tc->server);
     if ((count = recvfrom(tc->sock, buffer, MSGBUF_SIZE, 0,
-                         (struct sockaddr*)&(tc->server),
-                         (socklen_t*)&server_len)) < 0) {
+                          (struct sockaddr*)&(tc->server),
+                          (socklen_t*)&server_len)) < 0) {
       fprintf(stderr, "Error from recvfrom.\n");
       exit(1);
     }
