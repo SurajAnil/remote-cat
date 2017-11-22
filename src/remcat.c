@@ -37,12 +37,11 @@
 
 /* A connection handle */
 struct tftp_conn {
-  int type;    /* Are we putting or getting? - In our case, we only get */
-  FILE* fp;    /* The file we are reading or writing */
-  int sock;    /* Socket to communicate with server */
-  int blocknr; /* The current block number */
-  char* fname; /* The file name of the file we are putting or getting */
-  char* mode;  /* TFTP mode */
+  int type;        /* Are we putting or getting? - In our case, we only get */
+  int sock;        /* Socket to communicate with server */
+  int blocknr;     /* The current block number */
+  char* file_name; /* The file name of the file we are putting or getting */
+  char* mode;      /* TFTP mode */
   struct hostent* host;      /* Server host info  */
   struct sockaddr_in server; /* Remote peer address */
   socklen_t addrlen;         /* The remote address length */
@@ -75,16 +74,9 @@ struct tftp_conn* tftp_connect(int type,
   }
 
   if (type == TFTP_TYPE_GET)
-    tc->fp = fopen(fname, "wb");
+    tc->file_name = fname;
   else {
     fprintf(stderr, "Invalid TFTP mode, must be get\n");
-    return NULL;
-  }
-
-  if (tc->fp == NULL) {
-    fprintf(stderr, "File I/O error!\n");
-    close(tc->sock);
-    free(tc);
     return NULL;
   }
 
@@ -97,7 +89,6 @@ struct tftp_conn* tftp_connect(int type,
   /* get address from host name.
    * If error, gracefully clean up.*/
 
-  /* ... */
   if ((tc->host = gethostbyname(hostname)) == NULL) {
     fprintf(stderr, "unknown host: %s\n", hostname);
     exit(2);
@@ -115,7 +106,6 @@ struct tftp_conn* tftp_connect(int type,
 
   tc->type = type;
   tc->mode = mode;
-  tc->fname = fname;
   tc->blocknr = 0;
 
   memset(tc->msgbuf, 0, MSGBUF_SIZE);
@@ -130,14 +120,14 @@ struct tftp_conn* tftp_connect(int type,
   3. Return the number of bytes sent, or negative on error.
  */
 int tftp_send_rrq(struct tftp_conn* tc) {
-  /* struct tftp_rrq *rrq; */
-  /* ... */
+  /* Create a buffer to hold the file data and a char pointer to point to cells
+   * within buffer */
   char buffer[MSGBUF_SIZE], *p;
   int count;
-  *(short*)buffer = htons(OPCODE_RRQ); /* The op-code   */
+  *(short*)buffer = htons(OPCODE_RRQ); /* The op-code  is 2 bytes */
   p = buffer + 2;                      /* Point to the next location */
-  strcpy(p, tc->fname);                /* The file name */
-  p += strlen(tc->fname) + 1;          /* Keep the null  */
+  strcpy(p, tc->file_name);            /* The file name */
+  p += strlen(tc->file_name) + 1;      /* Keep the null  */
   strcpy(p, MODE_OCTET);               /* The Mode      */
   p += strlen(MODE_OCTET) + 1;
 
@@ -155,8 +145,8 @@ int tftp_transfer(struct tftp_conn* tc) {
   char buffer[MSGBUF_SIZE], *p;
   int fdstdout;
   int count, server_len;
-  p = buffer + 2;             /* Point to the next location */
-  p += strlen(tc->fname) + 1; /* Keep the null terminator */
+  p = buffer + 2;                 /* Point to the next location */
+  p += strlen(tc->file_name) + 1; /* Keep the null terminator */
   p += strlen(MODE_OCTET) + 1;
   int retval = 0;
 
@@ -183,8 +173,7 @@ int tftp_transfer(struct tftp_conn* tc) {
     switch (ntohs(*(short*)buffer)) {
       case OPCODE_DATA:
         /* Received data block, send ack */
-        if ((fdstdout = fwrite(buffer + 4, sizeof(char), count - 4, stdout)) <
-            0) {
+        if ((fdstdout = write(1, buffer + 4, count - 4)) < 0) {
           fprintf(stderr, "Error with fwrite\n");
           exit(1);
         }
@@ -222,7 +211,7 @@ void tftp_close(struct tftp_conn* tc) {
   if (!tc)
     return;
 
-  fclose(tc->fp);
+  // fclose(tc->fp);
   close(tc->sock);
   free(tc);
 }
