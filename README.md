@@ -20,7 +20,32 @@ TFTP is a simple file transfer protocol that uses UDP as its underlying protocol
      [STDOUT]         DAT (TFTP)                                
                        
 
-    
+### TFTP Packets
+
+            2 bytes     string    1 byte     string   1 byte
+            ------------------------------------------------
+           | Opcode |  Filename  |   0  |    Mode    |   0  |
+           --------------------------------------------------
+                                RRQ/WRQ packet
+
+                   2 bytes     2 bytes      n bytes
+                   ----------------------------------
+                  | Opcode |   Block #  |   Data     |
+                   ----------------------------------
+                                DATA packet
+
+                        2 bytes     2 bytes
+                         ---------------------
+                        | Opcode |   Block #  |
+                         ---------------------
+                                ACK packet
+
+                2 bytes     2 bytes      string   1 byte
+               -----------------------------------------
+              | Opcode |  ErrorCode |   ErrMsg   |   0  |
+               -----------------------------------------
+                                ERROR packet
+
 
 
 ## Usage
