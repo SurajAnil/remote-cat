@@ -155,7 +155,7 @@ int tftp_transfer(struct tftp_conn* tc) {
     return -1;
 
   /*
-    Put or get the file, block by block, in a loop.
+     GET the file, block by block, in a loop.
    */
   do {
     /* Check the message type and take the necessary
@@ -187,9 +187,6 @@ int tftp_transfer(struct tftp_conn* tc) {
         sendto(tc->sock, buffer, 4, 0, (struct sockaddr*)&tc->server,
                sizeof tc->server);
         break;
-      // case OPCODE_ACK:
-      //    Received ACK, send next block
-      //   break;
       case OPCODE_ERR:
         /* Handle error... */
         fprintf(stderr, "remcat: %s\n", buffer + 4);
@@ -210,8 +207,6 @@ out:
 void tftp_close(struct tftp_conn* tc) {
   if (!tc)
     return;
-
-  // fclose(tc->fp);
   close(tc->sock);
   free(tc);
 }
