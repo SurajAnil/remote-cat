@@ -34,17 +34,6 @@ typedef char u_int8_t;
 /* Timeout in seconds */
 #define TFTP_TIMEOUT 2
 
-/* Timeout in seconds */
-#define TFTP_TIMEOUT 2
-
-static char* err_codes[8] = {"Undef",
-                             "File not found",
-                             "Access violation",
-                             "Disk full or allocation exceeded",
-                             "Illegal TFTP operation",
-                             "Unknown transfer ID",
-                             "File already exists",
-                             "No such user"};
 
 #define TFTP_RRQ_HDR_LEN sizeof(struct tftp_rrq)
 #define TFTP_DATA_HDR_LEN sizeof(struct tftp_data)
