@@ -52,4 +52,40 @@ TFTP is a simple file transfer protocol that uses UDP as its underlying protocol
     user@system:~ remcat hostname file.txt                  
     
 ## References
-RFC1350 details: https://www.ietf.org/rfc/rfc1350.txt
+    RFC1350 details: https://www.ietf.org/rfc/rfc1350.txt
+
+## NOTE:
+The development of remote-cat server (src/remcat_server.c) is still in progress. As a temporary workaround, you can download and install the tftpd server from a debian style package manager to test the client. (The existing client (src/remcat.c) works well with the tftpd server). Read the instructions below to download and install the TFTPD server until the (work in progress) server is fully developed.
+
+### TFTPD Server Install and Setup
+        1. Install following packages.
+
+        sudo apt-get install xinetd tftpd tftp
+
+        2. Create /etc/xinetd.d/tftp and put this entry
+
+        service tftp
+        {
+        protocol        = udp
+        port            = 69
+        socket_type     = dgram
+        wait            = yes
+        user            = nobody
+        server          = /usr/sbin/in.tftpd
+        server_args     = /tftpboot
+        disable         = no
+        }
+
+        3. Create a folder /tftpboot this should match whatever you gave in server_args. mostly it will be tftpboot
+
+        sudo mkdir /tftpboot
+        sudo chmod -R 777 /tftpboot
+        sudo chown -R nobody /tftpboot
+
+        4. Restart the xinetd service.
+
+        sudo /etc/init.d/xinetd restart
+
+        5. In addition, you can use the lsof command to verify if the server is up and running.
+
+        sudo lsof -i | grep tftp
