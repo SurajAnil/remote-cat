@@ -30,7 +30,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "../include/remcat.h"
+
+#include "remcat.h"
 
 #define BUFF_SIZE 512
 

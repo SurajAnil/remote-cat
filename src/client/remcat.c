@@ -21,7 +21,6 @@
  * THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "../include/remcat.h"
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -31,6 +30,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include "remcat.h"
 
 /* Should cover most needs */
 #define MSGBUF_SIZE BLOCK_SIZE
