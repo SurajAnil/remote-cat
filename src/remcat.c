@@ -21,7 +21,7 @@
  * THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "../include/remcat.h"
+#include "remcat.h"
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -59,9 +59,8 @@ struct tftp_conn* tftp_connect(int type,
   /* error checks */
   if (!fname || !mode || !hostname)
     return NULL;
-
   tc = (struct tftp_conn*)malloc(sizeof(struct tftp_conn));
-
+  tc->addrlen = sizeof(struct sockaddr_in);
   if (!tc)
     return NULL;
 
@@ -80,36 +79,39 @@ struct tftp_conn* tftp_connect(int type,
     return NULL;
   }
 
+  // reset all the fields in sockarr hints
   memset(&hints, 0, sizeof(hints));
+  // ai_family is unspecified and socktype is of UDP
   hints.ai_family = PF_UNSPEC;
   hints.ai_socktype = SOCK_DGRAM;
+  // copy TFTP port address to port_str
   char port_str[5];
-  sprintf(port_str, "%d", TFTP_PORT);
+  sprintf(port_str, "%d", 5069);
 
   /* get address from host name.
    * If error, gracefully clean up.*/
-
   if ((tc->host = gethostbyname(hostname)) == NULL) {
     fprintf(stderr, "unknown host: %s\n", hostname);
     exit(2);
   }
+  // use IPV4 version
   tc->server.sin_family = AF_INET;
+  // set hostname and port
   memcpy(&tc->server.sin_addr.s_addr, tc->host->h_addr, tc->host->h_length);
-  tc->server.sin_port = htons(TFTP_PORT);
+  tc->server.sin_port = htons(5069);
+
   /* Assign address to the connection handle.
    * You can assume that the first address in the hostent
    * struct is the correct one */
-
   memcpy(&tc->server, hints.ai_addr, hints.ai_addrlen);
 
   tc->addrlen = sizeof(struct sockaddr_in);
-
   tc->type = type;
   tc->mode = mode;
   tc->blocknr = 0;
-
+  // reset msgbuf
   memset(tc->msgbuf, 0, MSGBUF_SIZE);
-
+  // return connection handle
   return tc;
 }
 
@@ -122,18 +124,19 @@ struct tftp_conn* tftp_connect(int type,
 int tftp_send_rrq(struct tftp_conn* tc) {
   /* Create a buffer to hold the file data and a char pointer to point to cells
    * within buffer */
-  char buffer[MSGBUF_SIZE], *p;
+  char* p;
   int count;
-  *(short*)buffer = htons(OPCODE_RRQ); /* The op-code  is 2 bytes */
-  p = buffer + 2;                      /* Point to the next location */
-  strcpy(p, tc->file_name);            /* The file name */
-  p += strlen(tc->file_name) + 1;      /* Keep the null  */
-  strcpy(p, MODE_OCTET);               /* The Mode      */
+  tc->blocknr = 0;
+  *(short*)tc->msgbuf = htons(OPCODE_RRQ); /* The op-code  is 2 bytes */
+  p = tc->msgbuf + 2;                      /* Point to the next location */
+  strcpy(p, tc->file_name);                /* The file name */
+  p += strlen(tc->file_name) + 1;          /* Keep the null  */
+  strcpy(p, MODE_OCTET);                   /* The Mode      */
   p += strlen(MODE_OCTET) + 1;
 
   /* Send Read Request to tftp server */
-  if ((count = sendto(tc->sock, buffer, p - buffer, 0,
-                      (struct sockaddr*)&tc->server, sizeof tc->server)) < 0) {
+  if ((count = sendto(tc->sock, tc->msgbuf, p - tc->msgbuf, 0,
+                      (struct sockaddr*)&tc->server, tc->addrlen)) < 0) {
     fprintf(stderr, "Could not send the RRQ\n");
     exit(1);
   }
@@ -141,11 +144,40 @@ int tftp_send_rrq(struct tftp_conn* tc) {
   return count;
 }
 
-int tftp_transfer(struct tftp_conn* tc) {
-  char buffer[MSGBUF_SIZE], *p;
+int validate_data(struct tftp_conn* tc) {
+  // check for valid block#
+  if (ntohs(*(short*)(tc->msgbuf + 2)) != ++tc->blocknr) {
+    fprintf(stderr, "Incorrect block number\n");
+    return -1;
+  }
+
+  return 1;
+
+  //*((short*)(tc->msgbuf + 2)) = htons();
+  /* Received data block, send ack */
+}
+int send_ack(struct tftp_conn* tc) {
+  int count;
+  /* Send an ack packet. The block number we want to ack is already in
+             the buffer so we just need to change the opcode. Note that the ACK
+             is sent to the port number which the server just sent the data
+             from, NOT to port 69 */
+  *(short*)tc->msgbuf = htons(OPCODE_ACK);
+  (*(short*)(tc->msgbuf + 2)) = htons(tc->blocknr);
+  if ((count = sendto(tc->sock, tc->msgbuf, 4, 0, (struct sockaddr*)&tc->server,
+                      tc->addrlen)) < 0) {
+    fprintf(stderr, "Error sending ACK\n");
+    return -1;
+  }
+  return 1;
+}
+
+int tftp_recv(struct tftp_conn* tc) {
+  char* p;
   int fdstdout;
-  int count, server_len;
-  p = buffer + 2;                 /* Point to the next location */
+  int count, server_len, data_len;
+  int status;
+  p = tc->msgbuf + 2;             /* Point to the next location */
   p += strlen(tc->file_name) + 1; /* Keep the null terminator */
   p += strlen(MODE_OCTET) + 1;
   int retval = 0;
@@ -164,39 +196,44 @@ int tftp_transfer(struct tftp_conn* tc) {
     /*ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
                     struct sockaddr *src_addr, socklen_t *addrlen);*/
     server_len = sizeof(tc->server);
-    if ((count = recvfrom(tc->sock, buffer, MSGBUF_SIZE, 0,
+    data_len = 0;
+    if ((count = recvfrom(tc->sock, tc->msgbuf, MSGBUF_SIZE, 0,
                           (struct sockaddr*)&(tc->server),
-                          (socklen_t*)&server_len)) < 0) {
+                          (socklen_t*)&tc->addrlen)) < 0) {
       fprintf(stderr, "Error from recvfrom.\n");
       exit(1);
     }
-    switch (ntohs(*(short*)buffer)) {
+    // get data count and update count
+    char* p = (tc->msgbuf + 4);
+    while (*p) {
+      data_len++;
+      p++;
+    }
+
+    // get DATA and send ACK
+    switch (ntohs(*(short*)tc->msgbuf)) {
       case OPCODE_DATA:
-        /* Received data block, send ack */
-        if ((fdstdout = write(1, buffer + 4, count - 4)) < 0) {
-          fprintf(stderr, "Error with fwrite\n");
-          exit(1);
+        if ((status = validate_data(tc)) > 0) {
+          if ((fdstdout = write(1, tc->msgbuf + 4, count - 4)) < 0) {
+            fprintf(stderr, "Error with fwrite\n");
+            continue;
+          }
+          if (send_ack(tc) < 0) {
+            fprintf(stderr, "Error sending ACK\n");
+            continue;
+          }
         }
-        /* Send an ack packet. The block number we want to ack is
-           already in the buffer so we just need to change the
-           opcode. Note that the ACK is sent to the port number
-           which the server just sent the data from, NOT to port
-           69
-        */
-        *(short*)buffer = htons(OPCODE_ACK);
-        sendto(tc->sock, buffer, 4, 0, (struct sockaddr*)&tc->server,
-               sizeof tc->server);
         break;
       case OPCODE_ERR:
         /* Handle error... */
-        fprintf(stderr, "remcat: %s\n", buffer + 4);
+        fprintf(stderr, "remcat: %s\n", tc->msgbuf + 4);
         break;
       default:
         fprintf(stderr, "\nUnknown message type\n");
         goto out;
     }
 
-  } while (count == 512);
+  } while (data_len == 508);
 
   // printf("\nTotal data bytes sent/received: %d.\n", totlen);
 out:
@@ -239,7 +276,7 @@ int main(int argc, char* argv[]) {
 
   /* If RRQ succeeds,
      Transfer the remote file in blocks to the STDOUT */
-  if ((retval = tftp_transfer(tc)) < 0) {
+  if ((retval = tftp_recv(tc)) < 0) {
     fprintf(stderr, "File transfer failed!\n");
   }
 
