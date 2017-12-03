@@ -3,9 +3,9 @@
 
 #if defined(SUNOS_5)
 #define OS_SUNOS5
-typedef short u_int16_t;
-typedef int u_int32_t;
-typedef char u_int8_t;
+typedef unsigned short u_int16_t;
+typedef unsigned int u_int32_t;
+typedef unsigned char u_int8_t;
 #elif defined(__GNUC__) && (defined(__APPLE_CPP__) || defined(__APPLE_CC__) || \
                             defined(__MACOS_CLASSIC__))
 #define OS_MACOSX
@@ -33,10 +33,5 @@ typedef char u_int8_t;
 
 /* Timeout in seconds */
 #define TFTP_TIMEOUT 2
-
-
-#define TFTP_RRQ_HDR_LEN sizeof(struct tftp_rrq)
-#define TFTP_DATA_HDR_LEN sizeof(struct tftp_data)
-#define TFTP_RRQ_LEN(f, m) (sizeof(struct tftp_rrq) + strlen(f) + strlen(m) + 2)
 
 #endif /* _REMCAT_H_ */
