@@ -30,7 +30,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "../include/remcat.h"
+#include "remcat.h"
 
 #define BUFF_SIZE 512
 
@@ -40,10 +40,11 @@ struct timeval timeout;
 struct tftp_conn {
   FILE* fp;
   int fd;
-  int sock;               /* Socket to communicate with server */
-  unsigned short blocknr; /* The current block number */
-  char* file_name; /* The file name of the file we are putting or getting */
-  char* mode;      /* TFTP mode */
+  int sock;          /* Socket to communicate with server */
+  u_int16_t blocknr; /* The current block number */
+  char* file_name;   /* The file name of the file we are putting or getting */
+  char* mode;        /* TFTP mode */
+  struct hostent* hostp;     /* client host info */
   struct sockaddr_in client; /* Remote peer address */
   struct sockaddr_in server; /* server (current machine) address */
   socklen_t addrlen_c;       /* The remote address length */
@@ -58,7 +59,7 @@ ssize_t send_data(struct tftp_conn* tc) {
   *(short*)(tc->msgbuffer + 2) = htons(tc->blocknr);
 
   if ((count = sendto(tc->sock, tc->msgbuffer, sizeof(tc->msgbuffer), 0,
-                      (struct sockaddr*)&tc->server, tc->addrlen_s)) < 0) {
+                      (struct sockaddr*)&tc->client, tc->addrlen_c)) < 0) {
     fprintf(stderr, "Error in sending\n");
   }
   return count;
@@ -68,7 +69,8 @@ ssize_t send_data(struct tftp_conn* tc) {
 int recv_message(struct tftp_conn* tc) {
   int count;
   if ((count = recvfrom(tc->sock, tc->msgbuffer, sizeof(tc->msgbuffer), 0,
-                        (struct sockaddr*)tc->sock, tc->addrlen_c)) < 0) {
+                        (struct sockaddr*)&tc->client,
+                        (socklen_t*)&tc->addrlen_c)) < 0) {
     fprintf(stderr, "Error receiving data\n");
   }
   return count;
@@ -78,10 +80,9 @@ int process_rrq(struct tftp_conn* tc) {
   // pointer to the file we want to read from.
   char fname[100];
   int last_pack = 0;
-  ssize_t data_len;
+  ssize_t data_len = 508;
   tc->blocknr = 0;
-  tc->addrlen_c = sizeof(tc->client);
-  tc->addrlen_s = sizeof(tc->server);
+  int blocknr;
   int countdown;
   int count;
 
@@ -94,19 +95,11 @@ int process_rrq(struct tftp_conn* tc) {
     fprintf(stderr, "Error, could not open file\n");
     exit(1);
   }
-  // get pointer to end of file name
-  // p = strlen(buffer);
-  // p += 1;
-  int size = 512 - strlen(tc->msgbuffer) -
-             2;  // gets the size of data needed to be
-                 // copied to the buffer.
-                 // The total length of the msgbuffer
-                 // minus 4 bytes of OPCODE and blk number preceeding
-                 // the null chaacter
 
   // while the packet to send isn't the last packet
   while (!last_pack) {
-    data_len = fread(tc->msgbuffer + 4, sizeof(char), size, tc->fd);
+    memset(tc->msgbuffer + 4, 0, 508);
+    data_len = fread(tc->msgbuffer + 4, sizeof(char), data_len, tc->fp);
     tc->blocknr++;
     // if this is the last packet, we need to close the connection
     if (data_len < 508)
@@ -129,14 +122,8 @@ int process_rrq(struct tftp_conn* tc) {
         exit(1);
       }
 
-      if (count > 4)
+      if (count >= 4)
         break;
-
-      // if (errno != EAGAIN) {
-      //   printf("%s.%u: transfer killed\n", inet_ntoa(tc->client->sin_addr),
-      //          ntohs(tc->client->sin_port));
-      //   exit(1);
-      // }
     }
 
     if (!countdown) {
@@ -159,7 +146,7 @@ int process_rrq(struct tftp_conn* tc) {
       exit(1);
     }
 
-    if (ntohs(*((short*)(tc->msgbuffer + 2))) !=
+    if ((blocknr = ntohs(*((short*)(tc->msgbuffer + 2)))) !=
         tc->blocknr) {  // the ack number is too high
       printf("%s.%u: invalid ack number received\n",
              inet_ntoa(tc->client.sin_addr), ntohs(tc->client.sin_port));
@@ -167,14 +154,14 @@ int process_rrq(struct tftp_conn* tc) {
       exit(1);
     }
   }
-  return size;
+  return data_len + 4;  // + 4 for the OPCODE and BLOCK
 }
 
 // driver
 int main(int argc, char const* argv[]) {
   struct tftp_conn* tc;
   // Always a GET request (in our case)
-  int port = TFTP_PORT;
+  int port = 5069;
   tc = (struct tftp_conn*)malloc(sizeof(struct tftp_conn));
   // for sockopt
   int optval;
@@ -182,8 +169,10 @@ int main(int argc, char const* argv[]) {
   int status;
   // recv value ssize_t
   ssize_t recv;
-
+  tc->addrlen_c = sizeof(struct sockaddr_in);
+  tc->addrlen_s = sizeof(struct sockaddr_in);
   /* Socket: Create */
+  char* hostaddrp;
   if ((tc->sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
     fprintf(stderr, "Error creating sock\n");
     exit(1);
@@ -197,37 +186,45 @@ int main(int argc, char const* argv[]) {
              sizeof(int));
 
   /* Internet address phase*/
-  memset((char*)&tc->server, 0, sizeof tc->server);
+  memset((char*)&tc->server, 0, sizeof(struct sockaddr_in));
+  bzero((char*)&tc->server, sizeof(struct sockaddr_in));
+  tc->server.sin_family = AF_INET;
+  tc->server.sin_addr.s_addr = htonl(INADDR_ANY);
+  tc->server.sin_port = htons(5069);
 
   /* Bind the socket with the port */
   if ((status = bind(tc->sock, (struct sockaddr*)&tc->server,
-                     sizeof tc->server)) < 0) {
+                     sizeof(struct sockaddr_in))) < 0) {
     fprintf(stderr, "Bind error\n");
     exit(1);
   }
 
   /* Main server loop */
   while (1) {
-    // /* Listen for a connection */
-    // printf("Listening for a connectioin...\n");
-    // if((status = accept(sock, )) < 0){
+    /* Listen for a connection */
     timeout.tv_sec = TFTP_TIMEOUT;
     timeout.tv_usec = 0;
 
-    // }
-    /* recvfrom the client */
     // first reset the buffer
     memset((char*)tc->msgbuffer, 0, BUFF_SIZE);
     if ((recv = recvfrom(tc->sock, (char*)tc->msgbuffer, BUFF_SIZE, 0,
-                         (struct sockaddr*)&tc->client, sizeof tc->client)) <
-        0) {
+                         (struct sockaddr*)&(tc->client),
+                         (socklen_t*)&tc->addrlen_c)) < 0) {
       fprintf(stderr, "Error receiving from client\n");
     }
+    /* Determine who sent the request */
+    tc->hostp = gethostbyaddr((const char*)&tc->client.sin_addr.s_addr,
+                              sizeof(tc->client.sin_addr.s_addr), AF_INET);
+    if (tc->hostp == NULL)
+      error("ERROR on gethostbyaddr");
+    hostaddrp = inet_ntoa(tc->client.sin_addr);
+    if (hostaddrp == NULL)
+      error("ERROR on inet_ntoa\n");
 
     switch (ntohs(*(short*)tc->msgbuffer)) {
       // first request packet, process it and send the first data packet
       // should there be no error
-      case 'OPCODE_RRQ':
+      case OPCODE_RRQ:
         if ((status = process_rrq(tc)) < 0) {
           fprintf(stderr, "Error processing RRQ\n");
         }
@@ -238,6 +235,10 @@ int main(int argc, char const* argv[]) {
         break;
     }
   }
+  // release resources
+  free(tc);
+  // get rid of dangling pointers
+  tc = NULL;
 
   return 0;
 }
