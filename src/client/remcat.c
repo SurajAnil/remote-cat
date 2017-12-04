@@ -21,7 +21,6 @@
  * THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
