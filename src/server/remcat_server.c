@@ -77,6 +77,17 @@ int recv_message(struct tftp_conn* tc) {
   return count;
 }
 
+/* Send error */
+int send_error(struct tftp_conn* tc) {
+  *((short*)tc->msgbuffer) = htons(OPCODE_ERR);
+  if ((sendto(tc->sock, tc->msgbuffer, sizeof(tc->msgbuffer), 0,
+              (struct sockaddr*)&tc->client, tc->addrlen_c)) < 0) {
+    fprintf(stderr, "Error in sending\n");
+    return -1;
+  }
+  return 1;
+}
+
 int process_rrq(struct tftp_conn* tc) {
   // pointer to the file we want to read from.
   char fname[100];
@@ -92,8 +103,13 @@ int process_rrq(struct tftp_conn* tc) {
   tc->file_name = fname;
 
   // check if file exists
-  if ((tc->fp = fopen(tc->file_name, "rt")) < 0) {
-    fprintf(stderr, "Error, could not open file\n");
+  if ((tc->fp = fopen(tc->file_name, "r")) == NULL) {
+    printf("Error, could not open file\n");
+    strcpy(tc->msgbuffer + 4, "Error opening file\0");
+    if (send_error(tc) < 0) {
+      printf("Error sending\n");
+      exit(1);
+    }
     exit(1);
   }
 
