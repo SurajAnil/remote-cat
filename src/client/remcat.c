@@ -21,6 +21,7 @@
  * THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -227,7 +228,7 @@ int tftp_recv(struct tftp_conn* tc) {
         break;
       case OPCODE_ERR:
         /* Handle error... */
-        printf("remcat: %s\n", tc->msgbuf + 4);
+        fprintf(stderr, "remcat: %s\n", tc->msgbuf + 4);
         break;
       default:
         fprintf(stderr, "\nUnknown message type\n");
